@@ -43,7 +43,7 @@ export default function Login() {
           <div className="bg-indigo-600 p-3 rounded-2xl mb-4 shadow-lg shadow-indigo-200">
             <ClipboardList className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">企业考核管理系统</h1>
+          <h1 className="text-2xl font-bold text-slate-900">璧山研究院企业考核管理系统</h1>
           <p className="text-slate-500 mt-1">请登录您的账号以继续</p>
         </div>
 
@@ -95,7 +95,7 @@ export default function Login() {
         </form>
 
         <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-          <p className="text-xs text-slate-400">© 2024 企业考核管理系统 版权所有</p>
+          <p className="text-xs text-slate-400">© 重庆大学璧山先进技术研究院 版权所有</p>
         </div>
       </motion.div>
     </div>
