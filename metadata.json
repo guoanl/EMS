@@ -1,0 +1,5 @@
+{
+  "name": "企业考核管理系统",
+  "description": "轻量级企业考核管理Web应用，包含管理端和客户端，支持任务配置、数据填报及进度查看。",
+  "requestFramePermissions": []
+}
