@@ -9,6 +9,7 @@ export default function AdminEnterpriseDetail() {
   const navigate = useNavigate();
   const [enterprise, setEnterprise] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDetail();
@@ -18,14 +19,16 @@ export default function AdminEnterpriseDetail() {
     try {
       const res = await api.admin.getEnterpriseDetail(Number(id));
       setEnterprise(res);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
   if (loading) return <div className="py-12 text-center text-slate-400">加载中...</div>;
+  if (error) return <div className="py-12 text-center text-red-500 font-bold">{error}</div>;
   if (!enterprise) return <div className="py-12 text-center text-slate-400">未找到企业信息</div>;
 
   const calculateProgress = (task: Task) => {

@@ -9,9 +9,19 @@ import fs from 'fs';
 import cors from 'cors';
 
 const __dirname = process.cwd();
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
-const db = new Database('database.sqlite');
-const JWT_SECRET = 'your-secret-key'; // In production, use process.env.JWT_SECRET
+// Configuration for persistence
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+const uploadsDir = path.join(DATA_DIR, 'uploads');
+const dbPath = path.join(DATA_DIR, 'database.sqlite');
+
+// Ensure uploads directory exists
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const db = new Database(dbPath);
 
 // Initialize Database
 db.exec(`
@@ -122,15 +132,7 @@ app.get('/api/admin/accounts', authenticate, isAdmin, (req, res) => {
 
 // Admin: Account Management - Get One (for editing)
 app.get('/api/admin/accounts/:id', authenticate, isAdmin, (req, res) => {
-  const idParam = req.params.id;
-  const idNum = Number(idParam);
-  let user: any;
-  if (!isNaN(idNum)) {
-    user = db.prepare('SELECT id, username, enterprise_name FROM users WHERE id = ?').get(idNum);
-  }
-  if (!user) {
-    user = db.prepare('SELECT id, username, enterprise_name FROM users WHERE id = ?').get(idParam);
-  }
+  const user: any = db.prepare('SELECT id, username, enterprise_name FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: '未找到该账号信息' });
   const tasks = db.prepare('SELECT id, name, target_type, target_value FROM tasks WHERE user_id = ?').all(user.id);
   res.json({ ...user, tasks });
@@ -166,9 +168,7 @@ app.post('/api/admin/accounts', authenticate, isAdmin, (req, res) => {
 // Admin: Account Management - Update
 app.put('/api/admin/accounts/:id', authenticate, isAdmin, (req, res) => {
   const { username, password, enterprise_name, tasks } = req.body;
-  const idParam = req.params.id;
-  const idNum = Number(idParam);
-  const userId = !isNaN(idNum) ? idNum : idParam;
+  const userId = req.params.id;
 
   const transaction = db.transaction(() => {
     let result;
@@ -201,11 +201,8 @@ app.put('/api/admin/accounts/:id', authenticate, isAdmin, (req, res) => {
 // Admin: Account Management - Reset Password
 app.post('/api/admin/accounts/:id/reset-password', authenticate, isAdmin, (req, res) => {
   const { password } = req.body;
-  const idParam = req.params.id;
-  const idNum = Number(idParam);
   const hashedPassword = bcrypt.hashSync(password, 10);
-  
-  let result = db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, !isNaN(idNum) ? idNum : idParam);
+  const result = db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, req.params.id);
   if (result.changes === 0) {
     return res.status(404).json({ error: '未找到该账号信息' });
   }
@@ -214,10 +211,8 @@ app.post('/api/admin/accounts/:id/reset-password', authenticate, isAdmin, (req, 
 
 // Admin: Account Management - Delete
 app.delete('/api/admin/accounts/:id', authenticate, isAdmin, (req, res) => {
-  const idParam = req.params.id;
-  const idNum = Number(idParam);
   // Cascade delete is handled by SQLite (ON DELETE CASCADE)
-  db.prepare('DELETE FROM users WHERE id = ?').run(!isNaN(idNum) ? idNum : idParam);
+  db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
   res.json({ success: true });
 });
 
@@ -238,18 +233,7 @@ app.get('/api/admin/enterprises', authenticate, isAdmin, (req, res) => {
 
 // Admin: Enterprise Management - Detail
 app.get('/api/admin/enterprises/:id', authenticate, isAdmin, (req, res) => {
-  const idParam = req.params.id;
-  const idNum = Number(idParam);
-  
-  let user: any;
-  if (!isNaN(idNum)) {
-    user = db.prepare('SELECT id, username, enterprise_name FROM users WHERE id = ?').get(idNum);
-  }
-  
-  if (!user) {
-    user = db.prepare('SELECT id, username, enterprise_name FROM users WHERE id = ?').get(idParam);
-  }
-
+  const user: any = db.prepare('SELECT id, username, enterprise_name FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: '未找到该企业信息' });
   const tasks = db.prepare('SELECT * FROM tasks WHERE user_id = ?').all(user.id);
   res.json({ ...user, tasks });
