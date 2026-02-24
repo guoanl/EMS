@@ -40,20 +40,32 @@ db.exec(`
     target_type TEXT, -- 'number' or 'boolean'
     target_value TEXT,
     actual_value TEXT,
-    attachment_name TEXT,
-    attachment_path TEXT,
     remarks TEXT,
     updated_at DATETIME,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS attachments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER,
+    name TEXT,
+    path TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+  );
 `);
 
-// Migration: Add remarks column if it doesn't exist
+// Migration: Move existing attachments from tasks to attachments table
 try {
   const tableInfo = db.prepare("PRAGMA table_info(tasks)").all() as any[];
-  const hasRemarks = tableInfo.some(col => col.name === 'remarks');
-  if (!hasRemarks) {
-    db.exec("ALTER TABLE tasks ADD COLUMN remarks TEXT");
+  const hasAttachmentName = tableInfo.some(col => col.name === 'attachment_name');
+  if (hasAttachmentName) {
+    const tasksWithAttachments = db.prepare("SELECT id, attachment_name, attachment_path FROM tasks WHERE attachment_name IS NOT NULL").all() as any[];
+    for (const task of tasksWithAttachments) {
+      db.prepare("INSERT INTO attachments (task_id, name, path) VALUES (?, ?, ?)").run(task.id, task.attachment_name, task.attachment_path);
+    }
+    // We can't easily drop columns in SQLite without recreating the table, so we'll just leave them or set to NULL
+    db.prepare("UPDATE tasks SET attachment_name = NULL, attachment_path = NULL").run();
   }
 } catch (err) {
   console.error("Migration failed:", err);
@@ -235,37 +247,55 @@ app.get('/api/admin/enterprises', authenticate, isAdmin, (req, res) => {
 app.get('/api/admin/enterprises/:id', authenticate, isAdmin, (req, res) => {
   const user: any = db.prepare('SELECT id, username, enterprise_name FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: '未找到该企业信息' });
-  const tasks = db.prepare('SELECT * FROM tasks WHERE user_id = ?').all(user.id);
+  const tasks = db.prepare('SELECT * FROM tasks WHERE user_id = ?').all(user.id) as any[];
+  for (const task of tasks) {
+    task.attachments = db.prepare('SELECT * FROM attachments WHERE task_id = ?').all(task.id);
+  }
   res.json({ ...user, tasks });
 });
 
 // Client: Get Tasks
 app.get('/api/client/tasks', authenticate, (req: any, res) => {
-  const tasks = db.prepare('SELECT * FROM tasks WHERE user_id = ?').all(req.user.id);
+  const tasks = db.prepare('SELECT * FROM tasks WHERE user_id = ?').all(req.user.id) as any[];
+  for (const task of tasks) {
+    task.attachments = db.prepare('SELECT * FROM attachments WHERE task_id = ?').all(task.id);
+  }
   res.json(tasks);
 });
 
 // Client: Save All
 app.post('/api/client/save-all', authenticate, upload.any(), (req: any, res) => {
   const userId = req.user.id;
-  const data = JSON.parse(req.body.data); // Array of { taskId, actualValue, remarks }
+  const data = JSON.parse(req.body.data); // Array of { taskId, actualValue, remarks, deleteAttachmentIds }
   const files = req.files as Express.Multer.File[];
 
   const transaction = db.transaction(() => {
     for (const item of data) {
-      const file = files.find(f => f.fieldname === `file_${item.taskId}`);
-      if (file) {
+      // Update task data
+      db.prepare(`
+        UPDATE tasks 
+        SET actual_value = ?, remarks = ?, updated_at = datetime('now') 
+        WHERE id = ? AND user_id = ?
+      `).run(item.actualValue.toString(), item.remarks || '', item.taskId, userId);
+
+      // Handle deletions
+      if (item.deleteAttachmentIds && item.deleteAttachmentIds.length > 0) {
+        for (const attachmentId of item.deleteAttachmentIds) {
+          const attachment = db.prepare('SELECT path FROM attachments WHERE id = ? AND task_id = ?').get(attachmentId, item.taskId) as any;
+          if (attachment) {
+            const fullPath = path.join(uploadsDir, attachment.path);
+            if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+            db.prepare('DELETE FROM attachments WHERE id = ?').run(attachmentId);
+          }
+        }
+      }
+
+      // Handle new uploads
+      const taskFiles = files.filter(f => f.fieldname === `files_${item.taskId}`);
+      for (const file of taskFiles) {
         db.prepare(`
-          UPDATE tasks 
-          SET actual_value = ?, attachment_name = ?, attachment_path = ?, remarks = ?, updated_at = datetime('now') 
-          WHERE id = ? AND user_id = ?
-        `).run(item.actualValue.toString(), file.originalname, file.filename, item.remarks || '', item.taskId, userId);
-      } else {
-        db.prepare(`
-          UPDATE tasks 
-          SET actual_value = ?, remarks = ?, updated_at = datetime('now') 
-          WHERE id = ? AND user_id = ?
-        `).run(item.actualValue.toString(), item.remarks || '', item.taskId, userId);
+          INSERT INTO attachments (task_id, name, path) VALUES (?, ?, ?)
+        `).run(item.taskId, file.originalname, file.filename);
       }
     }
   });

@@ -15,7 +15,12 @@ export default function ClientHome() {
   const user = api.user as User;
 
   // Local state for edits
-  const [edits, setEdits] = useState<Record<number, { actualValue: string, remarks: string, file: File | null, fileName?: string }>>({});
+  const [edits, setEdits] = useState<Record<number, { 
+    actualValue: string, 
+    remarks: string, 
+    newFiles: File[], 
+    deleteAttachmentIds: number[] 
+  }>>({});
 
   useEffect(() => {
     fetchTasks();
@@ -26,13 +31,18 @@ export default function ClientHome() {
       const res = await api.client.getTasks();
       setTasks(res);
       // Initialize edits from current values
-      const initialEdits: Record<number, { actualValue: string, remarks: string, file: File | null, fileName?: string }> = {};
+      const initialEdits: Record<number, { 
+        actualValue: string, 
+        remarks: string, 
+        newFiles: File[], 
+        deleteAttachmentIds: number[] 
+      }> = {};
       res.forEach((t: Task) => {
         initialEdits[t.id] = { 
           actualValue: t.actual_value || (t.target_type === 'boolean' ? '否' : ''),
           remarks: t.remarks || '',
-          file: null,
-          fileName: t.attachment_name
+          newFiles: [],
+          deleteAttachmentIds: []
         };
       });
       setEdits(initialEdits);
@@ -61,10 +71,15 @@ export default function ClientHome() {
     try {
       const formData = new FormData();
       const dataToSubmit = Object.entries(edits).map(([taskId, edit]) => {
-        if (edit.file) {
-          formData.append(`file_${taskId}`, edit.file);
-        }
-        return { taskId: Number(taskId), actualValue: edit.actualValue, remarks: edit.remarks };
+        edit.newFiles.forEach(file => {
+          formData.append(`files_${taskId}`, file);
+        });
+        return { 
+          taskId: Number(taskId), 
+          actualValue: edit.actualValue, 
+          remarks: edit.remarks,
+          deleteAttachmentIds: edit.deleteAttachmentIds
+        };
       });
       formData.append('data', JSON.stringify(dataToSubmit));
 
@@ -92,8 +107,9 @@ export default function ClientHome() {
 
       <div className="grid grid-cols-1 gap-6">
         {tasks.map((task) => {
-          const edit = edits[task.id] as { actualValue: string, remarks: string, file: File | null, fileName?: string } || { actualValue: '', remarks: '', file: null };
+          const edit = edits[task.id] || { actualValue: '', remarks: '', newFiles: [], deleteAttachmentIds: [] };
           const progress = calculateProgress(task, edit);
+          const existingAttachments = (task.attachments || []).filter(a => !edit.deleteAttachmentIds.includes(a.id));
           
           return (
             <motion.div 
@@ -158,25 +174,76 @@ export default function ClientHome() {
                       <div className="relative group">
                         <input 
                           type="file"
+                          multiple
                           onChange={e => {
-                            const file = e.target.files?.[0] || null;
-                            setEdits(prev => ({...prev, [task.id]: { ...prev[task.id], file, fileName: file?.name || prev[task.id].fileName }}));
+                            const files = Array.from(e.target.files || []);
+                            setEdits(prev => ({
+                              ...prev, 
+                              [task.id]: { 
+                                ...prev[task.id], 
+                                newFiles: [...prev[task.id].newFiles, ...files] 
+                              }
+                            }));
+                            // Reset input
+                            e.target.value = '';
                           }}
                           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                         />
                         <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 border border-dashed border-slate-300 rounded-xl group-hover:border-indigo-400 group-hover:bg-indigo-50 transition-all">
                           <Upload className="w-5 h-5 text-slate-400 group-hover:text-indigo-500" />
                           <span className="text-sm text-slate-500 truncate flex-1">
-                            {edit.fileName || '点击或拖拽上传文件'}
+                            点击或拖拽上传多个文件
                           </span>
                         </div>
                       </div>
-                      {task.attachment_name && !edit.file && (
-                        <div className="flex items-center gap-1 text-[10px] text-slate-400 ml-1">
-                          <FileText className="w-3 h-3" />
-                          <span>已存文件：{task.attachment_name}</span>
-                        </div>
-                      )}
+
+                      {/* File List */}
+                      <div className="space-y-1.5 mt-2">
+                        {/* Existing Attachments */}
+                        {existingAttachments.map(att => (
+                          <div key={att.id} className="flex items-center justify-between gap-2 px-3 py-1.5 bg-slate-50 rounded-lg border border-slate-100 group">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <FileText className="w-3.5 h-3.5 text-slate-400" />
+                              <span className="text-xs text-slate-600 truncate">{att.name}</span>
+                            </div>
+                            <button 
+                              onClick={() => setEdits(prev => ({
+                                ...prev,
+                                [task.id]: {
+                                  ...prev[task.id],
+                                  deleteAttachmentIds: [...prev[task.id].deleteAttachmentIds, att.id]
+                                }
+                              }))}
+                              className="text-slate-400 hover:text-red-500 transition-colors"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+
+                        {/* New Files */}
+                        {edit.newFiles.map((file, idx) => (
+                          <div key={idx} className="flex items-center justify-between gap-2 px-3 py-1.5 bg-indigo-50/50 rounded-lg border border-indigo-100 group">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                              <span className="text-xs text-indigo-600 truncate font-medium">{file.name}</span>
+                              <span className="text-[10px] text-indigo-300 font-normal">(新上传)</span>
+                            </div>
+                            <button 
+                              onClick={() => setEdits(prev => ({
+                                ...prev,
+                                [task.id]: {
+                                  ...prev[task.id],
+                                  newFiles: prev[task.id].newFiles.filter((_, i) => i !== idx)
+                                }
+                              }))}
+                              className="text-indigo-300 hover:text-red-500 transition-colors"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
 

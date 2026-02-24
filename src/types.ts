@@ -7,6 +7,14 @@ export interface User {
   enterprise_name: string;
 }
 
+export interface Attachment {
+  id: number;
+  task_id: number;
+  name: string;
+  path: string;
+  created_at: string;
+}
+
 export interface Task {
   id: number;
   user_id: number;
@@ -14,8 +22,7 @@ export interface Task {
   target_type: 'number' | 'boolean';
   target_value: string;
   actual_value?: string;
-  attachment_name?: string;
-  attachment_path?: string;
+  attachments?: Attachment[];
   remarks?: string;
   updated_at?: string;
 }

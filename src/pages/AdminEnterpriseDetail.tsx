@@ -101,16 +101,21 @@ export default function AdminEnterpriseDetail() {
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      {task.attachment_name ? (
-                        <a 
-                          href={`/api/download/${task.attachment_path}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-indigo-600 hover:text-indigo-700 font-medium text-sm group"
-                        >
-                          <Download className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
-                          <span className="max-w-[120px] truncate">{task.attachment_name}</span>
-                        </a>
+                      {task.attachments && task.attachments.length > 0 ? (
+                        <div className="flex flex-col gap-1.5">
+                          {task.attachments.map(att => (
+                            <a 
+                              key={att.id}
+                              href={`/api/download/${att.path}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 text-indigo-600 hover:text-indigo-700 font-medium text-xs group"
+                            >
+                              <Download className="w-3.5 h-3.5 group-hover:translate-y-0.5 transition-transform" />
+                              <span className="max-w-[120px] truncate">{att.name}</span>
+                            </a>
+                          ))}
+                        </div>
                       ) : (
                         <span className="text-slate-300 text-sm">未上传</span>
                       )}
